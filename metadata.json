@@ -1,0 +1,10 @@
+{
+  "name": "Thoughts to Task",
+  "description": "Convert voice transcriptions, audio brainstorming, and chaotic brain dumps into prioritized, structured actionable tasks powered by Gemini 3.5.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

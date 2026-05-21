@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile document containing basic details.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Thought": {
+      "title": "Raw Thought",
+      "description": "Captured raw user thought waiting for analysis.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "rawText": { "type": "string" },
+        "inputType": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "processed": { "type": "boolean" },
+        "convertedTaskId": { "type": "string" }
+      },
+      "required": ["id", "userId", "rawText", "inputType", "createdAt", "processed"]
+    },
+    "Task": {
+      "title": "Actionable Task",
+      "description": "Converted structural task with action items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" },
+        "subtasks": { "type": "array" },
+        "category": { "type": "string" },
+        "tags": { "type": "array" },
+        "dueDate": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "sourceThoughtId": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "description", "priority", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User account collection containing basic information."
+    },
+    "users/{userId}/thoughts/{thoughtId}": {
+      "schema": "Thought",
+      "description": "Captured raw thoughts for each user"
+    },
+    "users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks generated from thoughts or entered manually"
+    }
+  }
+}

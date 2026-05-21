@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (First Match default deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidString(val, max_size) {
+      return val is string && val.size() <= max_size;
+    }
+
+    // Entity Validation Helpers
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+        && isValidString(data.email, 256)
+        && (!('displayName' in data) || isValidString(data.displayName, 256))
+        && (!('photoURL' in data) || isValidString(data.photoURL, 1024))
+        && data.createdAt == request.time;
+    }
+
+    function isValidThought(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && isValidString(data.rawText, 50000)
+        && (data.inputType == 'text' || data.inputType == 'voice' || data.inputType == 'template')
+        && data.createdAt == request.time
+        && data.processed is bool
+        && (!('convertedTaskId' in data) || data.convertedTaskId == null || (data.convertedTaskId is string && data.convertedTaskId.size() <= 128));
+    }
+
+    function isValidTask(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && isValidString(data.title, 500)
+        && isValidString(data.description, 10000)
+        && (data.priority == 'low' || data.priority == 'medium' || data.priority == 'high')
+        && (data.status == 'pending' || data.status == 'completed' || data.status == 'archived')
+        && data.subtasks is list
+        && data.subtasks.size() <= 30
+        && (!('category' in data) || isValidString(data.category, 64))
+        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 10))
+        && (!('dueDate' in data) || data.dueDate == null || (data.dueDate is string && data.dueDate.size() <= 64))
+        && (!('durationMinutes' in data) || data.durationMinutes is int || data.durationMinutes is float)
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time
+        && (!('sourceThoughtId' in data) || data.sourceThoughtId == null || (data.sourceThoughtId is string && data.sourceThoughtId.size() <= 128));
+    }
+
+    // USERS COLLECTION RULES
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isEmailVerified() && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isEmailVerified() && isValidUser(request.resource.data) && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL'])
+      );
+      allow delete: if false; // Cannot delete user entry from client
+
+      // THOUGHTS SUBCOLLECTION RULES
+      match /thoughts/{thoughtId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        
+        allow create: if isOwner(userId) 
+          && isEmailVerified() 
+          && isValidId(thoughtId) 
+          && isValidThought(request.resource.data, userId);
+          
+        allow update: if isOwner(userId) 
+          && isEmailVerified() 
+          && isValidId(thoughtId) 
+          && isValidThought(request.resource.data, userId) 
+          && request.resource.data.createdAt == resource.data.createdAt
+          && (
+            // Action 1: Set processed status or converted task ID
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['processed', 'convertedTaskId'])
+          );
+          
+        allow delete: if isOwner(userId) && isEmailVerified();
+      }
+
+      // TASKS SUBCOLLECTION RULES
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        
+        allow create: if isOwner(userId) 
+          && isEmailVerified() 
+          && isValidId(taskId) 
+          && request.resource.data.createdAt == request.time
+          && isValidTask(request.resource.data, userId);
+          
+        allow update: if isOwner(userId) 
+          && isEmailVerified() 
+          && isValidId(taskId) 
+          && request.resource.data.createdAt == resource.data.createdAt
+          && isValidTask(request.resource.data, userId)
+          && (
+            // Partition tasks updates into 3 structured action categories:
+            // Action 1: Status toggle (complete/archive)
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            // Action 2: Subtask list updates (checking off an list item)
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['subtasks', 'updatedAt']) ||
+            // Action 3: General task details modification (title, priority, duration, calendar)
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'category', 'tags', 'dueDate', 'durationMinutes', 'updatedAt']) ||
+            // Action 4: Connect thought association after processing
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceThoughtId', 'updatedAt'])
+          );
+          
+        allow delete: if isOwner(userId) && isEmailVerified();
+      }
+    }
+  }
+}
